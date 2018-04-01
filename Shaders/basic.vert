@@ -2,10 +2,12 @@
 
 attribute vec4 position;
 attribute vec2 uvs;
+attribute vec2 lightData;
 
 varying vec3 vNormal;
 varying vec3 pos;
 varying vec2 vUvs;
+varying vec2 vLightData;
 
 uniform mat4 projViewMatrix;
 uniform mat4 modelMatrix;
@@ -24,4 +26,5 @@ void main() {
 	vNormal = cNormals[int(position.w)];
 	pos = vec3(position);
 	vUvs = uvs;
+	vLightData = lightData;
 }

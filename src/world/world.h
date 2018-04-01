@@ -26,6 +26,8 @@ typedef struct GPUVertex {
    Vec4 position;
    F32 uvx;
    F32 uvy;
+   F32 light;
+   F32 padding; // Use this for additional vertex data.
 } GPUVertex;
 
 typedef U32 GPUIndex;
@@ -37,11 +39,21 @@ typedef struct Cube {
    U16 flag2 : 1;     // 1-bit extra flag
 } Cube;
 
-// TODO: store a list of pointers of RenderChunk array (RenderChunk**)
-// into a Chunk datastructure. That way we can access the RenderChunk
-// and update it accordingly when we break a block. We can calculate
-// based on the position of the block breaking what position the RenderChunk
-// is in.
+#define MAX_LIGHT_LEVEL 15
+#define MIN_LIGHT_LEVEL 2
+
+/**
+ * Light values sit as this in memory:
+ * global = Sunlight / Global Light
+ * block  = Blocklight / Local Light
+ */
+typedef struct WorldLight {
+   U8 global : 4;
+   U8 block : 4;
+} WorldLight;
+typedef struct LightMap {
+   WorldLight lights[CHUNK_WIDTH * CHUNK_WIDTH * RENDER_CHUNK_HEIGHT];
+} LightMap;
 
 typedef struct RenderChunk {
    GPUVertex *vertexData; /// stretchy buffer
@@ -59,11 +71,13 @@ typedef struct Chunk {
    S32 startZ;
    Cube *cubeData;                         /// Cube data for full chunk
    RenderChunk renderChunks[CHUNK_SPLITS]; /// Per-render chunk data.
+   LightMap *lightMap[CHUNK_SPLITS];
 } Chunk;
 
 void initWorld();
 void freeWorld();
 F32 getViewDistance();
 void renderWorld(F32 dt);
+void freeGenerateUpdate(Chunk *c, RenderChunk *r, S32 renderChunkId);
 
 #endif // _GAME_WORLD_H_

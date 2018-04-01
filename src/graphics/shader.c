@@ -86,6 +86,7 @@ bool generateShaderProgram(const char *vertexFile, const char *fragmentFile, U32
    // bind attrib locations
    glBindAttribLocation(*program, 0, "position");
    glBindAttribLocation(*program, 1, "uvs");
+   glBindAttribLocation(*program, 2, "lightData");
     
    glLinkProgram(*program);
 

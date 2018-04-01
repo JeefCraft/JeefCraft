@@ -19,9 +19,17 @@
 
 #include "world/world.h"
 
-Chunk* getChunkAt(S32 x, S32 z);
+inline static S32 flattenWorldArrayIndex(S32 x, S32 y, S32 z) {
+   return x * (MAX_CHUNK_HEIGHT) * (CHUNK_WIDTH)+z * (MAX_CHUNK_HEIGHT)+y;
+}
+
+inline static S32 flattenRenderChunkArrayIndex(S32 x, S32 y, S32 z) {
+   return x * (RENDER_CHUNK_HEIGHT) * (CHUNK_WIDTH)+z * (RENDER_CHUNK_HEIGHT)+(y % RENDER_CHUNK_HEIGHT); // works for global or local y
+}
 
 Cube* getCubeAt(Cube *cubeData, S32 x, S32 y, S32 z);
+
+void worldCordsToChunkCoords(S32 x, S32 z, S32 *chunkX, S32 *chunkZ);
 
 bool isTransparent(Cube *cubeData, S32 x, S32 y, S32 z);
 

@@ -31,13 +31,14 @@
 #include "world/material.h"
 #include "world/util.h"
 #include "world/terrainGen.h"
+#include "world/worldMap.h"
+#include "world/lighting.h"
 
-/// ChunkWorld is a flat 2D array that represents the entire
-/// world based upon
-Chunk *gChunkWorld = NULL;
+// Our map world
+ChunkTable gChunkTable;
 
 // Grid size but should be variable. This is the 'chunk distance'.
-S32 worldSize = 2;
+S32 worldSize = 4;
 
 GLuint projMatrixLoc;
 GLuint modelMatrixLoc;
@@ -48,7 +49,7 @@ Texture2D textureAtlas;
 #define TEXTURE_ATLAS_COUNT_I 32
 #define TEXTURE_ATLAS_COUNT_F 32.0f
 
-static void buildFace(Chunk *chunk, S32 index, S32 side, S32 material, Vec3 localPos) {
+static void buildFace(Chunk *chunk, S32 index, S32 side, F32 light, S32 material, Vec3 localPos) {
    // Vertex data first, then index data.
 
    RenderChunk *renderChunk = &chunk->renderChunks[index];
@@ -61,6 +62,8 @@ static void buildFace(Chunk *chunk, S32 index, S32 side, S32 material, Vec3 loca
       v.position.w = cubes[side][i][3];
       v.uvx = (F32)(cubeUVs[side][i][0] + ((F32)(material % TEXTURE_ATLAS_COUNT_I))) / TEXTURE_ATLAS_COUNT_F;
       v.uvy = (F32)(cubeUVs[side][i][1] + ((F32)(material / TEXTURE_ATLAS_COUNT_I))) / TEXTURE_ATLAS_COUNT_F;
+      v.light = light;
+      v.padding = 1.0f;
       sb_push(renderChunk->vertexData, v);
    }
    renderChunk->vertexCount += 4;
@@ -102,32 +105,40 @@ void generateGeometryForRenderChunk(Chunk *chunk, S32 renderChunkId) {
             bool isOpaqueNegativeZ = false;
             bool isOpaquePositiveZ = false;
 
-            if (x == 0 && chunkX > -worldSize) {
-               Cube *behindData = getChunkAt(chunkX - 1, chunkZ)->cubeData;
+            Chunk *c = chunktable_getAt(&gChunkTable, chunkX - CHUNK_WIDTH, chunkZ);
+            if (x == 0 && c != NULL) {
+               Cube *behindData = c->cubeData;
+               //Cube *behindData = getChunkAt(chunkX - 1, chunkZ)->cubeData;
                if (!isTransparent(behindData, CHUNK_WIDTH - 1, y, z)) {
                   // The cube behind us on the previous chunk is in fact
                   // transparent. We need to render this face.
                   isOpaqueNegativeX = true;
                }
             }
-            if (x == (CHUNK_WIDTH - 1) && (chunkX + 1) < worldSize) {
-               Cube *behindData = getChunkAt(chunkX + 1, chunkZ)->cubeData;
+            c = chunktable_getAt(&gChunkTable, chunkX + CHUNK_WIDTH, chunkZ);
+            if (x == (CHUNK_WIDTH - 1) && c != NULL) {
+               Cube *behindData = c->cubeData;
+               //Cube *behindData = getChunkAt(chunkX + 1, chunkZ)->cubeData;
                if (!isTransparent(behindData, 0, y, z)) {
                   // The cube behind us on the previous chunk is in fact
                   // transparent. We need to render this face.
                   isOpaquePositiveX = true;
                }
             }
-            if (z == 0 && chunkZ > -worldSize) {
-               Cube *behindData = getChunkAt(chunkX, chunkZ - 1)->cubeData;
+            c = chunktable_getAt(&gChunkTable, chunkX, chunkZ - CHUNK_WIDTH);
+            if (z == 0 && c != NULL) {
+               Cube *behindData = c->cubeData;
+               //Cube *behindData = getChunkAt(chunkX, chunkZ - 1)->cubeData;
                if (!isTransparent(behindData, x, y, CHUNK_WIDTH - 1)) {
                   // The cube behind us on the previous chunk is in fact
                   // transparent. We need to render this face.
                   isOpaqueNegativeZ = true;
                }
             }
-            if (z == (CHUNK_WIDTH - 1) && (chunkZ + 1) < worldSize) {
-               Cube *behindData = getChunkAt(chunkX, chunkZ + 1)->cubeData;
+            c = chunktable_getAt(&gChunkTable, chunkX, chunkZ + CHUNK_WIDTH);
+            if (z == (CHUNK_WIDTH - 1) && c != NULL) {
+               Cube *behindData = c->cubeData;
+               //Cube *behindData = getChunkAt(chunkX, chunkZ + 1)->cubeData;
                if (!isTransparent(behindData, x, y, 0)) {
                   // The cube behind us on the previous chunk is in fact
                   // transparent. We need to render this face.
@@ -139,14 +150,15 @@ void generateGeometryForRenderChunk(Chunk *chunk, S32 renderChunkId) {
             // If the cube is exposed in that direction, render that face.
 
             S32 material = getCubeAt(cubeData, x, y, z)->material;
+            F32 light = (F32)chunk_getBlockLight(chunk, x, y, z);
 
             if (y >= (MAX_CHUNK_HEIGHT - 1) || isTransparent(cubeData, x, y + 1, z))
-               buildFace(chunk, renderChunkId, CubeSides_Up, material, localPos);
+               buildFace(chunk, renderChunkId, CubeSides_Up, light, material, localPos);
 
             // If this is grass, bottom has to be dirt.
 
             if (y == 0 || isTransparent(cubeData, x, y - 1, z))
-               buildFace(chunk, renderChunkId, CubeSides_Down, (material == Material_Grass ? Material_Dirt : material), localPos);
+               buildFace(chunk, renderChunkId, CubeSides_Down, light, (material == Material_Grass ? Material_Dirt : material), localPos);
 
             // After we built the top, this is a special case for grass.
             // If we are actually building grass sides it has to be special.
@@ -154,16 +166,16 @@ void generateGeometryForRenderChunk(Chunk *chunk, S32 renderChunkId) {
                material = Material_Grass_Side;
 
             if ((!isOpaqueNegativeX && x == 0) || (x > 0 && isTransparent(cubeData, x - 1, y, z)))
-               buildFace(chunk, renderChunkId, CubeSides_West, material, localPos);
+               buildFace(chunk, renderChunkId, CubeSides_West, light, material, localPos);
 
             if ((!isOpaquePositiveX && x >= (CHUNK_WIDTH - 1)) || (x < (CHUNK_WIDTH - 1) && isTransparent(cubeData, x + 1, y, z)))
-               buildFace(chunk, renderChunkId, CubeSides_East, material, localPos);
+               buildFace(chunk, renderChunkId, CubeSides_East, light, material, localPos);
 
             if ((!isOpaqueNegativeZ && z == 0) || (z > 0 && isTransparent(cubeData, x, y, z - 1)))
-               buildFace(chunk, renderChunkId, CubeSides_South, material, localPos);
+               buildFace(chunk, renderChunkId, CubeSides_South, light, material, localPos);
 
             if ((!isOpaquePositiveZ && z >= (CHUNK_WIDTH - 1)) || (z < (CHUNK_WIDTH - 1) && isTransparent(cubeData, x, y, z + 1)))
-               buildFace(chunk, renderChunkId, CubeSides_North, material, localPos);
+               buildFace(chunk, renderChunkId, CubeSides_North, light, material, localPos);
          }
       }
    }
@@ -199,6 +211,8 @@ void uploadRenderChunkToGL(RenderChunk *r) {
    // in both system and gpu ram.
    sb_free(r->vertexData);
    sb_free(r->indices);
+   r->vertexData = NULL;
+   r->indices = NULL;
 }
 
 void uploadChunkToGL(Chunk *chunk) {
@@ -233,7 +247,8 @@ void uploadGeometryToGL() {
    // TODO: use VAO if extension is supported??
    for (S32 x = -worldSize; x < worldSize; ++x) {
       for (S32 z = -worldSize; z < worldSize; ++z) {
-         uploadChunkToGL(getChunkAt(x, z));
+         Chunk *chunk = chunktable_getAt(&gChunkTable, x * CHUNK_WIDTH, z * CHUNK_WIDTH);
+         uploadChunkToGL(chunk);
       }
    }
 
@@ -275,6 +290,9 @@ int pickerStatus = RELEASED;
 // status of placing blocks so we can't spam place blocks
 int placingStatus = RELEASED;
 
+// status of placing torch
+int placingTorchStatus = RELEASED;
+
 void initWorld() {
    // Only 2 mip levels.
    bool ret = createTexture2D("Assets/block_atlas.png", 4, 2, &textureAtlas);
@@ -295,9 +313,17 @@ void initWorld() {
 
    initTerrainGen();
 
-   // world grid
-   gChunkWorld = (Chunk*)calloc((worldSize * 2) * (worldSize * 2), sizeof(Chunk));
+   // Generate initial chunks.
+   // Note that simply alloating here it is better to allocate up front before generating
+   // the entire world as it will cause less thread contention with just inserting up front.
+   // TODO: handle threading on the chunktable datastructure!
    gTotalChunks = worldSize * 2 * worldSize * 2 * CHUNK_SPLITS;
+   chunktable_create(gTotalChunks / CHUNK_SPLITS, &gChunkTable);
+   for (S32 x = -worldSize; x < worldSize; ++x) {
+      for (S32 z = -worldSize; z < worldSize; ++z) {
+         chunktable_insertAt(&gChunkTable, x * CHUNK_WIDTH, z * CHUNK_WIDTH);
+      }
+   }
 
    // Easilly put each chunk in a thread in here.
    // nothing OpenGL, all calculation and world generation.
@@ -305,7 +331,7 @@ void initWorld() {
    for (S32 x = -worldSize; x < worldSize; ++x) {
       for (S32 z = -worldSize; z < worldSize; ++z) {
          // World position calcuation before passing.
-         generateWorld(x, z, x * CHUNK_WIDTH, z * CHUNK_WIDTH);
+         generateWorld(x * CHUNK_WIDTH, z * CHUNK_WIDTH);
       }
    }
 
@@ -315,7 +341,7 @@ void initWorld() {
 //#pragma omp parallel for
    for (S32 x = -worldSize; x < worldSize; ++x) {
       for (S32 z = -worldSize; z < worldSize; ++z) {
-         generateCavesAndStructures(x, z, x * CHUNK_WIDTH, z * CHUNK_WIDTH);
+         generateCavesAndStructures(x * CHUNK_WIDTH, z * CHUNK_WIDTH);
       }
    }
 
@@ -324,9 +350,7 @@ void initWorld() {
 //#pragma omp parallel for
    for (S32 x = -worldSize; x < worldSize; ++x) {
       for (S32 z = -worldSize; z < worldSize; ++z) {
-         Chunk * chunk = getChunkAt(x, z);
-         chunk->startX = x;
-         chunk->startZ = z;
+         Chunk *chunk = chunktable_getAt(&gChunkTable, x * CHUNK_WIDTH, z * CHUNK_WIDTH);
          generateGeometry(chunk);
       }
    }
@@ -336,16 +360,16 @@ void initWorld() {
    uploadGeometryToGL();
 }
 
-void freeWorld() {
-   for (S32 x = -worldSize; x < worldSize; ++x) {
-      for (S32 z = -worldSize; z < worldSize; ++z) {
-         Chunk *c = getChunkAt(x, z);
-         free(c->cubeData);
-         freeChunkGL(c);
-      }
-   }
+static void freeChunk(const Chunk *chunk) {
+   free(chunk->cubeData);
+   chunk_freeLightmap((Chunk*)chunk);
+   freeChunkGL((Chunk*)chunk);
+}
 
-   free(gChunkWorld);
+void freeWorld() {
+   chunktable_foreach(&gChunkTable, freeChunk);
+
+   chunktable_free(&gChunkTable);
    freeTerrainGen();
 }
 
@@ -405,8 +429,9 @@ static void remeshChunkGeometryAtGlobalPos(S32 x, S32 y, S32 z) {
 }
 
 void removeCubeAtWorldPosition(Cube *cube, S32 x, S32 y, S32 z) {
+   // Jeff - We have infinite world, we don't need this anymore as we always have cubes around us.
    // Bounds check on removing cube if we are at a boundary.
-   if (x <= -worldSize * CHUNK_WIDTH ||
+   /*if (x <= -worldSize * CHUNK_WIDTH ||
       x >= worldSize * CHUNK_WIDTH ||
       z <= -worldSize * CHUNK_WIDTH ||
       z >= worldSize * CHUNK_WIDTH ||
@@ -414,7 +439,7 @@ void removeCubeAtWorldPosition(Cube *cube, S32 x, S32 y, S32 z) {
       y >= MAX_CHUNK_HEIGHT) {
       printf("Cannot remove cube at %d %d %d. It is at a world edge boundary!\n", x, y, z);
       return;
-   }
+   }*/
 
    cube->material = Material_Air;
    remeshChunkGeometryAtGlobalPos(x, y, z);
@@ -426,7 +451,8 @@ void addCubeAtGlobalPos(Vec3 position) {
    S32 z = (S32)position.z;
 
    // Bounds check on removing cube if we are at a boundary.
-   if (x <= -worldSize * CHUNK_WIDTH ||
+   // Jeff - We have infinite world, we don't need this anymore as we always have cubes around us.
+   /*if (x <= -worldSize * CHUNK_WIDTH ||
       x >= worldSize * CHUNK_WIDTH ||
       z <= -worldSize * CHUNK_WIDTH ||
       z >= worldSize * CHUNK_WIDTH ||
@@ -435,6 +461,7 @@ void addCubeAtGlobalPos(Vec3 position) {
       printf("Cannot remove cube at %d %d %d. It is at a world edge boundary!\n", x, y, z);
       return;
    }
+   */
 
    // Just add bedrock for now.
    getGlobalCubeAtWorldSpacePosition(x, y, z)->material = Material_Bedrock;
@@ -475,6 +502,47 @@ void checkCubeAtLookAtCube(Vec3 cameraOrigin, Vec3 cameraDir, S32 x, S32 y, S32 
 
 bool orthoFlag = false;
 
+static void renderChunk(const Chunk *c) {
+   Frustum frustum;
+   getCameraFrustum(&frustum);
+
+   for (S32 i = 0; i < CHUNK_SPLITS; ++i) {
+      if (c->renderChunks[i].vertexCount > 0) {
+         gTotalVisibleChunks++;
+
+         // Set position.
+         // Center y pos should actually be RENDER_CHUNK_HEIGHT * i
+         // but pos should always be 0 for y since the pos is baked into the y coord.
+         Vec3 pos = create_vec3(c->startX, 0.0f, c->startZ);
+         Vec3 center;
+         Vec3 halfExtents = create_vec3(CHUNK_WIDTH / 2.0f, RENDER_CHUNK_HEIGHT / 2.0f, CHUNK_WIDTH / 2.0f);
+         glm_vec_add(pos.vec, halfExtents.vec, center.vec);
+         center.y += (F32)(i * RENDER_CHUNK_HEIGHT); // We add since we already have RENDER_CHUNK_HEIGHT / 2.0
+
+         if (FrustumCullSquareBox(&frustum, center, CHUNK_WIDTH / 2.0f)) {
+            mat4 modelMatrix;
+            glm_mat4_identity(modelMatrix);
+            glm_translate(modelMatrix, pos.vec);
+            glUniformMatrix4fv(modelMatrixLoc, 1, GL_FALSE, &(modelMatrix[0][0]));
+            glBindBuffer(GL_ARRAY_BUFFER, c->renderChunks[i].vbo);
+            glEnableVertexAttribArray(0);
+            glEnableVertexAttribArray(1);
+            glEnableVertexAttribArray(2);
+            glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(GPUVertex), (void*)offsetof(GPUVertex, position));
+            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GPUVertex), (void*)offsetof(GPUVertex, uvx));
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(GPUVertex), (void*)offsetof(GPUVertex, light));
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, c->renderChunks[i].ibo);
+            glDrawElements(GL_TRIANGLES, (GLsizei)c->renderChunks[i].indiceCount, GL_UNSIGNED_INT, (void*)0);
+            glDisableVertexAttribArray(0);
+            glDisableVertexAttribArray(1);
+            glDisableVertexAttribArray(2);
+
+            gVisibleChunks++;
+         }
+      }
+   }
+}
+
 void renderWorld(F32 dt) {
    // Set GL State
    glEnable(GL_CULL_FACE);
@@ -514,46 +582,10 @@ void renderWorld(F32 dt) {
    gVisibleChunks = 0;
    gTotalVisibleChunks = 0;
 
-   Frustum frustum;
-   getCameraFrustum(&frustum);
-
-   for (S32 x = -worldSize; x < worldSize; ++x) {
-      for (S32 z = -worldSize; z < worldSize; ++z) {
-         Chunk *c = getChunkAt(x, z);
-         for (S32 i = 0; i < CHUNK_SPLITS; ++i) {
-            if (c->renderChunks[i].vertexCount > 0) {
-               gTotalVisibleChunks++;
-
-               // Set position.
-               // Center y pos should actually be RENDER_CHUNK_HEIGHT * i
-               // but pos should always be 0 for y since the pos is baked into the y coord.
-               Vec3 pos = create_vec3(x * CHUNK_WIDTH, 0, z * CHUNK_WIDTH);
-               Vec3 center;
-               Vec3 halfExtents = create_vec3(CHUNK_WIDTH / 2.0f, RENDER_CHUNK_HEIGHT / 2.0f, CHUNK_WIDTH / 2.0f);
-               glm_vec_add(pos.vec, halfExtents.vec, center.vec);
-               center.y += (F32)(i * RENDER_CHUNK_HEIGHT); // We add since we already have RENDER_CHUNK_HEIGHT / 2.0
-
-               if (FrustumCullSquareBox(&frustum, center, CHUNK_WIDTH / 2.0f)) {
-                  mat4 modelMatrix;
-                  glm_mat4_identity(modelMatrix);
-                  glm_translate(modelMatrix, pos.vec);
-                  glUniformMatrix4fv(modelMatrixLoc, 1, GL_FALSE, &(modelMatrix[0][0]));
-                  glBindBuffer(GL_ARRAY_BUFFER, c->renderChunks[i].vbo);
-                  glEnableVertexAttribArray(0);
-                  glEnableVertexAttribArray(1);
-                  glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(GPUVertex), (void*)offsetof(GPUVertex, position));
-                  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GPUVertex), (void*)offsetof(GPUVertex, uvx));
-                  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, c->renderChunks[i].ibo);
-                  glDrawElements(GL_TRIANGLES, (GLsizei)c->renderChunks[i].indiceCount, GL_UNSIGNED_INT, (void*)0);
-                  glDisableVertexAttribArray(0);
-                  glDisableVertexAttribArray(1);
-
-                  gVisibleChunks++;
-               }
-            }
-         }
-      }
-   }
+   // Render each chunk.
+   // TODO: split up frustum culling and sort chunks front to back
+   // before actually rendering.
+   chunktable_foreach(&gChunkTable, renderChunk);
 
    // Do our raycast to screen world.
    Vec3 rayOrigin;
@@ -564,7 +596,7 @@ void renderWorld(F32 dt) {
    Vec3 point = rayOrigin;
    Vec3 scalar;
    glm_vec_scale(rayDir.vec, 0.01f, scalar.vec);
-   for (S32 i = 0; i < 400; ++i) {
+   for (S32 i = 0; i < 800; ++i) {
       glm_vec_add(point.vec, scalar.vec, point.vec);
 
       Vec3 pos = create_vec3(floorf(point.x), floorf(point.y), floorf(point.z));
@@ -610,7 +642,82 @@ void renderWorld(F32 dt) {
             placingStatus = RELEASED;
          }
 
+         if (placingStatus == RELEASED && inputGetKeyStatus(KEY_T) == PRESSED) {
+            S32 localX, localY, localZ;
+            Chunk *chunk = getChunkAtWorldSpacePosition((S32)pos.x, (S32)pos.y, (S32)pos.z);
+            globalPosToLocalPos((S32)pos.x, (S32)pos.y, (S32)pos.z, &localX, &localY, &localZ);
+            chunk_setBlockLight(chunk, localX, (S32)pos.y /* GLOBAL Y */, localZ, MAX_LIGHT_LEVEL);
+            placingTorchStatus = PRESSED;
+         } else if (inputGetKeyStatus(KEY_H) == RELEASED) {
+            placingTorchStatus = RELEASED;
+         }
+
          break;
+      }
+   }
+
+   //return;
+
+   // to keep infinite terrain with the world size, create new terrain here.
+   // Note that this is far from optimal, but this is just for proof of concept purposes.
+   Vec3 camPos;
+   getCameraPosition(&camPos);
+   camPos.y = 0; // don't care about y pos.
+   
+   typedef struct PositionToRemove {
+      S32 x;
+      S32 z;
+   } PositionToRemove;
+   PositionToRemove **positionsToRemove = NULL;
+
+   const F32 DIST = (F32)CHUNK_WIDTH * (F32)worldSize + (F32)CHUNK_WIDTH;  // 1 chunk padding.
+
+   // first, free all chunks that are out of scope.
+   // have to build an array of stuff to remove as we can't remove as we iterate.
+   for (S32 i = 0; i < gChunkTable.count; ++i) {
+      Chunk *c = &gChunkTable.chunkTable[i];
+
+      Vec3 pos = create_vec3((F32)c->startX + (CHUNK_WIDTH / 2.0f), 0, (F32)c->startZ + (CHUNK_WIDTH / 2.0f));
+      
+      // Check x and z distance independently.
+      if (fabsf(camPos.x - pos.x) > DIST ||fabsf(camPos.z - pos.z) > DIST) {
+         // out of range, remove
+         PositionToRemove *p = (PositionToRemove*)malloc(sizeof(PositionToRemove));
+         p->x = c->startX;
+         p->z = c->startZ;
+         sb_push(positionsToRemove, p);
+      }
+   }
+
+   for (S32 i = 0; i < sb_count(positionsToRemove); ++i) {
+      chunktable_removeAt(&gChunkTable, positionsToRemove[i]->x, positionsToRemove[i]->z);
+      free(positionsToRemove[i]);
+   }
+   sb_free(positionsToRemove);
+   
+   // now add new chunk
+
+   // Need to round campos to CHUNK_WIDTH
+   S32 centerX = (S32)(camPos.x / CHUNK_WIDTH) * CHUNK_WIDTH;
+   S32 centerZ = (S32)(camPos.z / CHUNK_WIDTH) * CHUNK_WIDTH;
+
+   // Build grid around center. any chunks that don't exist add them to the world.
+   for (S32 x = -worldSize; x < worldSize; ++x) {
+      for (S32 z = -worldSize; z < worldSize; z++) {
+         S32 chunkX = (x * CHUNK_WIDTH) + centerX;
+         S32 chunkZ = (z * CHUNK_WIDTH) + centerZ;
+
+         // Check to see if we have a chunk at this position. If we don't, make one!
+         // TODO: a hashtable would be faster here instead of O(n)
+         if (chunktable_getAt(&gChunkTable, chunkX, chunkZ) == NULL) {
+            // Insert chunk.
+            chunktable_insertAt(&gChunkTable, chunkX, chunkZ);
+            Chunk *chunk = chunktable_getAt(&gChunkTable, chunkX, chunkZ);
+            generateWorld(chunkX, chunkZ);
+            generateCavesAndStructures(chunkX, chunkZ);
+            generateGeometry(chunk);
+            uploadChunkToGL(chunk);
+         }
       }
    }
 }

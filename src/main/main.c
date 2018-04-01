@@ -25,6 +25,7 @@
 #include "graphics/shader.h"
 #include "game/camera.h"
 #include "world/world.h"
+#include "world/lighting.h"
 #include "math/math.h"
 
 extern S32 gVisibleChunks;
@@ -34,6 +35,10 @@ extern S32 gTotalVisibleChunks;
 int main(int argc, char **argv) {
    if (!initPlatform())
       return -1;
+
+#ifdef LIGHTQUEUE_TEST
+   LIGHTQUEUE_TEST_FN();
+#endif
 
    WindowCreationData createWindowData;
    memset(&createWindowData, 0, sizeof(WindowCreationData));
@@ -114,5 +119,6 @@ int main(int argc, char **argv) {
    freeWorld();
    freeWindow(&window);
    shutdownPlatform();
+
 	return 0;
 }

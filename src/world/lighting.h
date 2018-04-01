@@ -12,22 +12,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Note: Lighting implementation comes from and builds off of the technical
+// blogposts from Seed Of Andromeda.
+// https://www.seedofandromeda.com/blogs/
 //----------------------------------------------------------------------------
 
-#ifndef _WORLD_TERRAINGEN_H_
-#define _WORLD_TERRAINGEN_H_
+#ifndef _WORLD_LIGHTING_H_
+#define _WORLD_LIGHTING_H_
 
-#include "base/types.h"
 #include "world/world.h"
 
-void initTerrainGen();
+void chunk_initLightmap(Chunk *chunk);
+void chunk_freeLightmap(Chunk *chunk);
+S32 chunk_getBlockLight(Chunk *chunk, S32 x, S32 y, S32 z);
+void chunk_setBlockLight(Chunk *chunk, S32 x, S32 y, S32 z, S32 value);
 
-void freeTerrainGen();
+#define LIGHTQUEUE_TEST
 
-void generateWorld(S32 worldX, S32 worldZ);
-
-void generateCavesAndStructures(S32 worldX, S32 worldZ);
-
-void generateGeometryForRenderChunk(Chunk *chunk, S32 renderChunkId);
+#ifdef LIGHTQUEUE_TEST
+void LIGHTQUEUE_TEST_FN();
+#endif
 
 #endif

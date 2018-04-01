@@ -83,6 +83,8 @@ set(JEEFCRAFT_SRC
 	src/platform/glfw3/glfw3Window.c
 
 	src/world/cube.h
+	src/world/lighting.c
+	src/world/lighting.h
 	src/world/material.h
 	src/world/terrainGen.c
 	src/world/terrainGen.h
@@ -90,6 +92,8 @@ set(JEEFCRAFT_SRC
 	src/world/util.h
 	src/world/world.c
 	src/world/world.h
+	src/world/worldMap.c
+	src/world/worldMap.h
 )
 add_executable(${EXECUTABLE_NAME} ${JEEFCRAFT_SRC})
 target_link_libraries(${EXECUTABLE_NAME}

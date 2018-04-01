@@ -18,15 +18,12 @@
 #include "world/material.h"
 #include "world/terrainGen.h"
 #include "world/util.h"
+#include "world/worldMap.h"
 
 static struct osn_context *osn;
 
-/// ChunkWorld is a flat 2D array that represents the entire
-/// world based upon
-extern Chunk *gChunkWorld;
-
-// Grid size but should be variable. This is the 'chunk distance'.
-extern S32 worldSize;
+// Our map world
+extern ChunkTable gChunkTable;
 
 void initTerrainGen() {
    open_simplex_noise((U64)0xDEADBEEF, &osn);
@@ -66,16 +63,9 @@ static S32 solidCubesAroundCubeAt(S32 x, S32 y, S32 z, S32 worldX, S32 worldZ) {
    return solidCount;
 }
 
-void generateWorld(S32 chunkX, S32 chunkZ, S32 worldX, S32 worldZ) {
-   // We modulate divide CHUNK_WIDTH as we keep the grid static
-   // no matter where we move around on the map.
-   // Say we go west, well, the first 'west' chunks are replaced by new chunks.
-   // TODO: This doesn't work quite yet, and we might need to use chunk
-   // pointers so we can easilly rearrange the world.
-   // Or maybe a memcpy will be fine, who knows.
-
-   Chunk *chunk = getChunkAt(chunkX, chunkZ);
-   chunk->cubeData = (Cube*)calloc(CHUNK_SIZE, sizeof(Cube));
+void generateWorld(S32 worldX, S32 worldZ) {
+   // Get chunk at this position
+   Chunk *chunk = chunktable_getAt(&gChunkTable, worldX, worldZ);
    Cube *cubeData = chunk->cubeData;
 
    F64 stretchFactor = 20.0;
@@ -121,9 +111,9 @@ void generateWorld(S32 chunkX, S32 chunkZ, S32 worldX, S32 worldZ) {
    }
 }
 
-void generateCavesAndStructures(S32 chunkX, S32 chunkZ, S32 worldX, S32 worldZ) {
-
-   Chunk *chunk = getChunkAt(chunkX, chunkZ);
+void generateCavesAndStructures(S32 worldX, S32 worldZ) {
+   // Get chunk at this position
+   Chunk *chunk = chunktable_getAt(&gChunkTable, worldX, worldZ);
    Cube *cubeData = chunk->cubeData;
 
    // Generate caves.
